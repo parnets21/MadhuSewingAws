@@ -119,8 +119,11 @@ router.get("/my-orders", protect, async (req, res) => {
 });
 
 // Get All Orders (Admin only)
-router.get("/all", async (req, res) => {
+router.get("/all", protect, async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
     const orders = await Order.find()
       .sort({ createdAt: -1 })
       .populate("userId", "name email") // Ensure this line is present

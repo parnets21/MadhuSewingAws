@@ -1,4 +1,5 @@
 const Order = require('../models/Order');
+const Counter = require('../models/Counter');
 
 // Create new order
 exports.createOrder = async (req, res) => {
@@ -30,7 +31,15 @@ exports.createOrder = async (req, res) => {
     }
 
     // Create order
+    // Get next order number
+    const counter = await Counter.findOneAndUpdate(
+      { name: 'orderNumber' },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true }
+    );
+
     const newOrder = new Order({
+      orderNumber: counter.seq || 1,
       userId: req.user._id,  // Changed from req.user.userId to match your auth middleware
       fullName,
       phone,
@@ -123,7 +132,7 @@ exports.getUserOrders = async (req, res) => {
 exports.getAllOrders = async (req, res) => {
   try {
     // Verify admin access
-    if (!req.user.isAdmin) {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: "Admin access required"
@@ -158,7 +167,7 @@ exports.updateOrderStatus = async (req, res) => {
     const { status } = req.body;
 
     // Verify admin access
-    if (!req.user.isAdmin) {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: "Admin access required"

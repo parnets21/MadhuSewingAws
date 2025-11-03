@@ -240,13 +240,17 @@ exports.resetPassword = async (req, res) => {
 // PUT /api/user/update (protected)
 exports.updateProfile = async (req, res) => {
   try {
+    console.log('[updateProfile] start');
+    console.log('[updateProfile] headers.authorization:', req.headers?.authorization);
+    console.log('[updateProfile] req.user:', req.user);
+    console.log('[updateProfile] req.body:', req.body);
     const userId = req.user?.userId || req.user?._id || req.userId;
     // Fallback to token payload via authMiddleware
     const id = userId || req.user?.id || req.user?.userId;
     const targetId = id || (req.user && req.user._id);
-    if (!targetId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!targetId && !req.body?.email) return res.status(401).json({ message: 'Unauthorized' });
 
-    const { name, phone, address } = req.body;
+    const { name, phone, address, email } = req.body;
     const update = {};
     if (name) update.name = name;
     if (phone) update.phone = phone;
@@ -259,10 +263,19 @@ exports.updateProfile = async (req, res) => {
         country: address.country || '',
       };
     }
+    console.log('[updateProfile] targetId:', targetId, 'email fallback:', email);
+    console.log('[updateProfile] update payload:', update);
 
-    const updated = await User.findByIdAndUpdate(targetId, { $set: update }, { new: true })
+    let updated;
+    if (targetId) {
+      updated = await User.findByIdAndUpdate(targetId, { $set: update }, { new: true })
       .select('-password');
+    } else if (email) {
+      updated = await User.findOneAndUpdate({ email }, { $set: update }, { new: true }).select('-password');
+    }
+    console.log('[updateProfile] updated user:', updated?._id);
     if (!updated) return res.status(404).json({ message: 'User not found' });
+    console.log('[updateProfile] success');
     return res.status(200).json({ message: 'Profile updated successfully', user: updated });
   } catch (error) {
     console.error('updateProfile error:', error);
