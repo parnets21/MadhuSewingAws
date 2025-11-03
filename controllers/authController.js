@@ -236,3 +236,36 @@ exports.resetPassword = async (req, res) => {
     return res.status(500).json({ message: 'Failed to reset password', error: error.message });
   }
 };
+
+// PUT /api/user/update (protected)
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?._id || req.userId;
+    // Fallback to token payload via authMiddleware
+    const id = userId || req.user?.id || req.user?.userId;
+    const targetId = id || (req.user && req.user._id);
+    if (!targetId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { name, phone, address } = req.body;
+    const update = {};
+    if (name) update.name = name;
+    if (phone) update.phone = phone;
+    if (address) {
+      update.address = {
+        street: address.street || '',
+        city: address.city || '',
+        state: address.state || '',
+        zip: address.zip || '',
+        country: address.country || '',
+      };
+    }
+
+    const updated = await User.findByIdAndUpdate(targetId, { $set: update }, { new: true })
+      .select('-password');
+    if (!updated) return res.status(404).json({ message: 'User not found' });
+    return res.status(200).json({ message: 'Profile updated successfully', user: updated });
+  } catch (error) {
+    console.error('updateProfile error:', error);
+    return res.status(500).json({ message: 'Profile update failed', error: error.message });
+  }
+};
