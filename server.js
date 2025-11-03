@@ -31,12 +31,12 @@ connectDB();
 const routes = require('./routes/index');
 app.use('/api', routes);
 
-// Basic Routes
-app.get('/', (req, res) => {
-  res.json({
-    message: '🚀 Sewing Machine E-Commerce API',
-    status: 'running'
-  });
+app.use(express.static(path.join(__dirname, 'build'))); // Change 'build' to your frontend folder if needed
+
+// Redirect all requests to the index.html file
+
+app.get("*", (req, res) => {
+  return  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
 app.get('/health', (req, res) => {
