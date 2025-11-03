@@ -13,7 +13,10 @@ const userSchema = new mongoose.Schema({
     zip: { type: String, required: true },
     country: { type: String, required: true }
   },
-  role: { type: String, default: "user" }
+  role: { type: String, default: "user" },
+  resetOtp: { type: String },
+  resetOtpExpires: { type: Date },
+  resetOtpVerified: { type: Boolean, default: false }
 }, { timestamps: true });
 
 // Hash password before saving
