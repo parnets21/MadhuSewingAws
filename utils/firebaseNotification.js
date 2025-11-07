@@ -1,13 +1,32 @@
 const admin = require('firebase-admin');
 const path = require('path');
+const fs = require('fs');
 
 // Initialize Firebase Admin SDK
-const serviceAccount = require(path.join(__dirname, '../madhu-sewing-machines-firebase-adminsdk-fbsvc-112b4a05a4.json'));
+let firebaseInitialized = false;
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+try {
+  const serviceAccountPath = path.join(__dirname, '../madhu-sewing-machines-firebase-adminsdk-fbsvc-112b4a05a4.json');
+  
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = require(serviceAccountPath);
+    
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized successfully');
+    } else {
+      firebaseInitialized = true;
+    }
+  } else {
+    console.warn('Firebase service account key not found. Push notifications will be disabled.');
+    console.warn('Expected path:', serviceAccountPath);
+  }
+} catch (error) {
+  console.error('Error initializing Firebase Admin SDK:', error.message);
+  console.warn('Push notifications will be disabled.');
 }
 
 /**
@@ -18,6 +37,11 @@ if (!admin.apps.length) {
  * @param {Object} data - Additional data payload
  */
 const sendNotification = async (fcmToken, title, body, data = {}) => {
+  if (!firebaseInitialized) {
+    console.log('Firebase not initialized. Notification not sent.');
+    return { success: false, error: 'Firebase not initialized' };
+  }
+
   if (!fcmToken) {
     console.log('No FCM token provided');
     return { success: false, error: 'No FCM token' };
