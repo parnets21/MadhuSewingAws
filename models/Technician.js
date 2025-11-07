@@ -50,6 +50,10 @@ const technicianSchema = new mongoose.Schema({
     max: 5,
     default: 0,
   },
+  fcmToken: {
+    type: String,
+    default: null,
+  },
 }, { timestamps: true });
 
 // Hash password before saving

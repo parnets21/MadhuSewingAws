@@ -3,12 +3,13 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Job = require('../models/Job');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
+const { sendJobAssignedNotification } = require('../utils/firebaseNotification');
 
 // @desc    Register a new technician
 // @route   POST /api/technicians
 // @access  Public
 const registerTechnician = asyncHandler(async (req, res) => {
-  const { name, email, phone, address, experience, password } = req.body;
+  const { name, email, phone, address, experience, password, fcmToken } = req.body;
 
   // Check if technician already exists
   const technicianExists = await Technician.findOne({ email });
@@ -25,6 +26,7 @@ const registerTechnician = asyncHandler(async (req, res) => {
     address,
     experience,
     password,
+    fcmToken: fcmToken || null,
   });
 
   if (technician) {
@@ -57,6 +59,12 @@ const loginTechnician = asyncHandler(async (req, res) => {
   if (!technician || !(await technician.matchPassword(password))) {
     res.status(401);
     throw new Error('Invalid credentials');
+  }
+
+  // Update FCM token if provided
+  if (req.body.fcmToken) {
+    technician.fcmToken = req.body.fcmToken;
+    await technician.save();
   }
 
   res.json({
@@ -110,7 +118,19 @@ const assignTechnician = asyncHandler(async (req, res) => {
      status: 'upcoming'
    });
 
-
+   // Send push notification to technician if FCM token exists
+   if (technician.fcmToken) {
+     try {
+       await sendJobAssignedNotification(technician.fcmToken, {
+         jobId: job._id.toString(),
+         customerName: serviceRequest.firstName + ' ' + serviceRequest.lastName,
+         serviceType: serviceRequest.brand || 'Service Request',
+       });
+     } catch (notificationError) {
+       console.error('Error sending notification:', notificationError);
+       // Don't fail the request if notification fails
+     }
+   }
 
    res.json({
      success: true,
