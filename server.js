@@ -7,7 +7,17 @@ const path = require('path');
 const app = express();
 
 // Basic Middleware
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    // Allow all origins for now, or specify your frontend URL
+    callback(null, true);
+  },
+  credentials: true,
+  exposedHeaders: ['x-static-admin-email', 'x-static-admin-auth'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-static-admin-email', 'x-static-admin-auth', 'X-Requested-With']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
   

@@ -5,6 +5,76 @@ const createError = require('http-errors');
 // 🔐 Middleware to protect routes (requires authentication)
 exports.protect = async (req, res, next) => {
   try {
+    // Check for static admin authentication (for static admin login)
+    // Method 1: Check custom headers (Express normalizes to lowercase)
+    const staticAdminEmail = req.headers['x-static-admin-email'];
+    const staticAdminAuth = req.headers['x-static-admin-auth'];
+    
+    // Method 2: Check query parameters as fallback
+    const staticAdminEmailQuery = req.query['staticAdminEmail'];
+    const staticAdminAuthQuery = req.query['staticAdminAuth'];
+    
+    // Method 3: Check Authorization header with special format "StaticAdmin <email>"
+    const authHeader = req.headers.authorization;
+    const isStaticAdminAuth = authHeader && authHeader.startsWith('StaticAdmin ');
+    
+    // Debug logging
+    console.log('🔍 Auth check:', {
+      method: req.method,
+      path: req.path,
+      headerEmail: staticAdminEmail,
+      headerAuth: staticAdminAuth,
+      queryEmail: staticAdminEmailQuery,
+      queryAuth: staticAdminAuthQuery,
+      authHeader: authHeader ? authHeader.substring(0, 20) + '...' : 'missing',
+      allHeaders: Object.keys(req.headers).filter(h => h.toLowerCase().includes('static') || h.toLowerCase() === 'authorization')
+    });
+    
+    // Check static admin via headers
+    if (staticAdminEmail === 'admin@madhu.com' && staticAdminAuth === 'true') {
+      console.log('✅ Static admin authenticated via headers');
+      req.user = {
+        _id: 'static-admin',
+        email: 'admin@madhu.com',
+        role: 'admin',
+        isAdmin: true,
+        name: 'Admin'
+      };
+      res.locals.user = req.user;
+      return next();
+    }
+    
+    // Check static admin via query parameters
+    if (staticAdminEmailQuery === 'admin@madhu.com' && staticAdminAuthQuery === 'true') {
+      console.log('✅ Static admin authenticated via query params');
+      req.user = {
+        _id: 'static-admin',
+        email: 'admin@madhu.com',
+        role: 'admin',
+        isAdmin: true,
+        name: 'Admin'
+      };
+      res.locals.user = req.user;
+      return next();
+    }
+    
+    // Check static admin via Authorization header
+    if (isStaticAdminAuth) {
+      const email = authHeader.split(' ')[1];
+      if (email === 'admin@madhu.com') {
+        console.log('✅ Static admin authenticated via Authorization header');
+        req.user = {
+          _id: 'static-admin',
+          email: 'admin@madhu.com',
+          role: 'admin',
+          isAdmin: true,
+          name: 'Admin'
+        };
+        res.locals.user = req.user;
+        return next();
+      }
+    }
+
     let token;
 
     if (
