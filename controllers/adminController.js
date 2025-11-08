@@ -38,20 +38,50 @@ exports.getDashboardStats = async (req, res) => {
     const totalProducts = await Product.countDocuments();
     const totalOrders = await Order.countDocuments();
     const totalServiceRequests = await ServiceRequest.countDocuments();
+    const totalTechnicians = await Technician.countDocuments();
 
-    const recentOrders = await Order.find().sort('-createdAt').limit(5).populate('user');
-    const recentServiceRequests = await ServiceRequest.find().sort('-createdAt').limit(5).populate('user');
+    // Calculate total revenue from all orders
+    const orders = await Order.find({ status: { $ne: 'Cancelled' } });
+    const totalRevenue = orders.reduce((sum, order) => sum + (order.total || 0), 0);
+
+    // Get recent orders (last 5)
+    const recentOrders = await Order.find()
+      .sort('-createdAt')
+      .limit(5)
+      .populate('userId', 'name email')
+      .select('-__v')
+      .lean();
+
+    // Get recent service requests (last 5)
+    const recentServiceRequests = await ServiceRequest.find()
+      .sort('-createdAt')
+      .limit(5)
+      .populate('user')
+      .lean();
+
+    // Get pending orders count
+    const pendingOrders = await Order.countDocuments({ status: 'Pending' });
+    
+    // Get completed orders count
+    const completedOrders = await Order.countDocuments({ status: 'Delivered' });
 
     res.json({
-      totalUsers,
-      totalProducts,
-      totalOrders,
-      totalServiceRequests,
+      success: true,
+      stats: {
+        totalUsers,
+        totalProducts,
+        totalOrders,
+        totalServiceRequests,
+        totalTechnicians,
+        totalRevenue,
+        pendingOrders,
+        completedOrders
+      },
       recentOrders,
       recentServiceRequests
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
