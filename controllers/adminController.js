@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const ServiceRequest = require('../models/ServiceRequest');
+const Technician = require('../models/Technician');
 const jwt = require('jsonwebtoken');
 
 exports.getAllUsers = async (req, res) => {
@@ -91,6 +92,48 @@ exports.setupAdminUser = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+// Delete user
+exports.deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByIdAndDelete(userId);
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get all technicians
+exports.getAllTechnicians = async (req, res) => {
+  try {
+    const technicians = await Technician.find().select('-password');
+    res.json({ success: true, data: technicians });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Delete technician
+exports.deleteTechnician = async (req, res) => {
+  try {
+    const { technicianId } = req.params;
+    const technician = await Technician.findByIdAndDelete(technicianId);
+    
+    if (!technician) {
+      return res.status(404).json({ success: false, message: 'Technician not found' });
+    }
+    
+    res.json({ success: true, message: 'Technician deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
