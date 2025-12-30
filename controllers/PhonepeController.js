@@ -98,7 +98,7 @@ class Transaction {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
-      // Create transaction record
+  
       transaction = await transactionModel.create({
         userId,
         username,
