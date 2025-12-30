@@ -16,7 +16,8 @@ const orderRoutes = require('./orderRoutes');
 const jobRoutes = require('./jobRoutes');
 const technicianRoutes = require('./technicianRoutes');
 const salesRoutes = require('./SalesRoutes');
-const userProfileRoutes = require('./userProfileRoutes');
+const userProfileRoutes = require('./userProfileRoutes'); 
+const PhonepeRoutes = require("./PhonepeRoutes")
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -33,6 +34,7 @@ router.use('/orders', orderRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/technicians', technicianRoutes);
 router.use('/sales', salesRoutes);
-router.use('/user', userProfileRoutes);
+router.use('/user', userProfileRoutes); 
+router.use('/phonepe',PhonepeRoutes)
 
 module.exports = router;
