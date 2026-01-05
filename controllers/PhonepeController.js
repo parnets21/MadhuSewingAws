@@ -102,7 +102,6 @@ class Transaction {
           error: "Missing required fields: userId and amount are required" 
         });
       }
-
       // Validate amount is positive
       if (amount <= 0) {
         return res.status(400).json({ 
@@ -331,12 +330,12 @@ class Transaction {
       // Encode payload to base64
       const base64Payload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
-      // Generate signature (use /pg/v1/pay endpoint path)
-      // Signature format: SHA256(base64Payload + "/pg/v1/pay" + clientSecret) + "###1"
-      const signature = this.generateSignature(base64Payload, '/pg/v1/pay');
+      // Generate signature (use /pg/v1/orders endpoint path)
+      // Signature format: SHA256(base64Payload + "/pg/v1/orders" + clientSecret) + "###1"
+      const signature = this.generateSignature(base64Payload, '/pg/v1/orders');
 
       // Log request (sanitized)
-      this.logPaymentRequest('/pg/v1/pay', base64Payload, signature);
+      this.logPaymentRequest('/pg/v1/orders', base64Payload, signature);
 
       console.log('DEBUG - Payment Payload:', JSON.stringify(paymentPayload, null, 2));
       console.log('DEBUG - Base64 Payload:', base64Payload);
@@ -348,7 +347,7 @@ class Transaction {
 
       try {
         phonepeResponse = await axios.post(
-          `${MERCHANT_CONFIG.apiUrl}/pg/v1/pay`,
+          `${MERCHANT_CONFIG.apiUrl}/pg/v1/orders`,
           {
             request: base64Payload
           },
@@ -370,7 +369,7 @@ class Transaction {
         // Check if response status indicates success
         if (phonepeResponse.status === 200 && phonepeResponse.data?.orderId && phonepeResponse.data?.token) {
           apiSuccess = true;
-          this.logPaymentResponse('/pg/v1/pay', phonepeResponse.data);
+          this.logPaymentResponse('/pg/v1/orders', phonepeResponse.data);
         } else {
           console.warn(`PhonePe API returned status ${phonepeResponse.status}:`, phonepeResponse.data);
         }
