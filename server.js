@@ -6,6 +6,12 @@ const path = require('path');
 
 const app = express();
 
+// Request logging middleware (for debugging)
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
 // Basic Middleware
 app.use(cors({
   origin: function (origin, callback) {
@@ -20,8 +26,10 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-  
+
+// Serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Database Connection
 const connectDB = async () => {
   try {
@@ -41,18 +49,53 @@ connectDB();
 const routes = require('./routes/index');
 app.use('/api', routes);
 
-app.use(express.static(path.join(__dirname, 'build'))); // Change 'build' to your frontend folder if needed
-
-// Redirect all requests to the index.html file
-
-app.get("*", (req, res) => {
-  return  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+// Test endpoint to verify API is working
+app.get('/api/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'API is working correctly',
+    timestamp: new Date().toISOString()
+  });
 });
 
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
+});
+
+// Serve static files (uploads, public, etc.)
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+// Serve build files (if they exist)
+const buildPath = path.join(__dirname, 'build');
+try {
+  const fs = require('fs');
+  if (fs.existsSync(buildPath)) {
+    app.use(express.static(buildPath));
+  }
+} catch (err) {
+  console.warn('Build folder not found, skipping static file serving');
+}
+
+// Redirect all other requests to the index.html file (SPA fallback)
+// This MUST be after all API routes and static files
+app.get("*", (req, res) => {
+  const indexPath = path.join(__dirname, 'build', 'index.html');
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+  } catch (err) {
+    console.warn('index.html not found');
+  }
+  // If build doesn't exist, return 404
+  res.status(404).json({
+    success: false,
+    message: 'Not found'
   });
 });
 

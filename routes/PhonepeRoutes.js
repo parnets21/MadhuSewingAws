@@ -2,11 +2,11 @@ const transactionController=require("../controllers/PhonepeController");
 const express=require('express');
 const router=express.Router();
 
-router.post("/addpaymentphonepay",transactionController.addPaymentPhone);
-// router.post("/addpaymentmobile",transactionController.addPaymentMobile);
-router.post("/makepayment",transactionController.makepayment);
-router.put("/updateStatuspayment/:id",transactionController.updateStatuspayment);
-router.get("/getallpayment",transactionController.getallpayment);
-router.post("/payment-callback",transactionController.paymentcallback);
-router.get("/checkPayment/:id/:userId",transactionController.checkPayment);
+// Web-based payment flow endpoints
+router.post("/initiate", (req, res) => transactionController.initiate(req, res));
+router.get("/verify", (req, res) => transactionController.verify(req, res));
+
+// Legacy SDK endpoints for native mobile app integration
+router.post("/initiate-sdk", (req, res) => transactionController.initiateSDK(req, res));
+
 module.exports=router; 
