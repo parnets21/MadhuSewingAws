@@ -312,26 +312,27 @@ class Transaction {
       const transactionId = transaction._id.toString();
       const amountInPaise = Math.round(amount * 100);
 
-      // Prepare request payload for PhonePe /v1/orders endpoint
+      // Prepare request payload for PhonePe /v1/pay endpoint
+      // Using the correct format for PhonePe API
       const paymentPayload = {
         merchantId: MERCHANT_CONFIG.clientId,
+        merchantUserId: userId,
         merchantOrderId: transactionId,
         amount: amountInPaise,
         expireAfter: 1200,
-        metaInfo: {
-          udf1: userId,
-          udf2: username || 'User',
-          udf3: Mobile || ''
-        },
-        paymentFlow: {
-          type: "PG_CHECKOUT"
-        }
+        description: `Payment for order ${transactionId}`,
+        notifyUrl: `${process.env.WEB_URL || 'https://madhusewingmachines.com'}/api/phonepe/notify`,
+        redirectUrl: `${process.env.WEB_URL || 'https://madhusewingmachines.com'}/payment?transactionId=${transactionId}`,
+        udf1: userId,
+        udf2: username || 'User',
+        udf3: Mobile || ''
       };
 
       // Encode payload to base64
       const base64Payload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
       // Generate signature (use /pg/v1/pay endpoint path)
+      // Signature format: SHA256(base64Payload + "/pg/v1/pay" + clientSecret) + "###1"
       const signature = this.generateSignature(base64Payload, '/pg/v1/pay');
 
       // Log request (sanitized)
