@@ -1,307 +1,474 @@
-const transactionModel = require("../models/PhonepeModel");
-const crypto = require("crypto");
 const axios = require("axios");
+const crypto = require('crypto');
 
-// PhonePe Configuration
-const PHONEPE_CONFIG = {
-  merchantId: process.env.PHONEPE_MERCHANT_ID || "M23T8T3E76KMB",
-  saltKey: process.env.PHONEPE_CLIENT_SECRET || "f0c866c6-0264-4729-ba6e-deb661a8ea0b",
-  saltIndex: 1,
-  environment: process.env.PHONEPE_ENVIRONMENT || "PRODUCTION",
-  apiUrl: process.env.PHONEPE_API_URL || "https://api.phonepe.com/apis/hermes"
-};
+const MERCHANT_ID = "M23XA8YTUO61B";
+const SECRET_KEY = "3079f6a3-6f25-4c47-bd4e-c581051ad263";  
+const PHONEPE_API_URL = "https://api.phonepe.com/apis/hermes/pg/v1/pay"; 
+const CALLBACK_URL = "https://nutribowl.org";  
 
-// Get PhonePe API base URL based on environment
-const getApiUrl = () => {
-  if (PHONEPE_CONFIG.environment === "SANDBOX") {
-    return "https://api-preprod.phonepe.com/apis/pg-sandbox";
-  }
-  return PHONEPE_CONFIG.apiUrl || "https://api.phonepe.com/apis/hermes";
-};
+const transactionModel = require("../models/PhonepeModel");
+const Checkout = require("../models/Order");
 
-// Generate SHA256 checksum for PhonePe
-const generateChecksum = (payload, endpoint) => {
-  const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-  const stringToHash = base64Payload + endpoint + PHONEPE_CONFIG.saltKey;
-  const sha256Hash = crypto.createHash("sha256").update(stringToHash).digest("hex");
-  return `${sha256Hash}###${PHONEPE_CONFIG.saltIndex}`;
-};
+// PhonePe SDK removed for Node 14 compatibility - using REST API directly
+const clientId = "SU2510151651095669332240";
+const clientSecret = "3079f6a3-6f25-4c47-bd4e-c581051ad263";
+
+// No SDK client - using direct REST API for Node 14 compatibility
+const client = null;
+console.log("PhonePe: Using direct REST API (Node 14 compatible mode)");
 
 class Transaction {
 
-  /**
-   * POST /phonepe/initiate
-   * Initiate PhonePe payment and return payment URL
-   */
-  async initiate(req, res) {
-    let transaction;
+  async addPaymentPhone(req, res) {
 
     try {
-      const { userId, username, mobile, orderId, amount } = req.body;
+      console.log('[addPaymentPhone] body:', req.body);
+      const { userId, username, Mobile, orderId, amount, config, successUrl, failedUrl } = req.body;
 
-      if (!userId || !amount) {
+      // Validate required fields
+      if (!userId || !username || !Mobile || !amount) {
         return res.status(400).json({ 
-          success: false,
-          error: "Missing required fields: userId and amount are required" 
+          error: "Missing required fields",
+          details: "userId, username, Mobile, and amount are required"
         });
       }
-      
-      if (amount <= 0) {
-        return res.status(400).json({ 
-          success: false,
-          error: "Amount must be greater than 0" 
+
+      console.log("[addPaymentPhone] Creating transaction for user:", userId, "amount:", amount, 'orderId:', orderId);
+
+      // Save transaction details in DB
+      const data = await transactionModel.create({
+        userId,
+        username,
+        Mobile,
+        orderId,
+        amount,
+        config,
+        successUrl,
+        failedUrl
+      });
+
+      if (!data) {
+        console.error("Failed to create transaction record");
+        return res.status(400).json({ error: "Failed to create transaction record" });
+      }
+
+      console.log("[addPaymentPhone] Transaction created with ID:", data._id);
+
+      const merchantOrderId = data._id.toString(); // Use DB _id as unique order ID
+
+      const redirectUrl = `https://nutribowl.org/payment-success?transactionId=${data._id}&userID=${userId}`;
+
+      console.log("[addPaymentPhone] Building payment request for merchantOrderId:", merchantOrderId);
+
+      // Check if PhonePe client is initialized
+      if (!client) {
+        console.error("[addPaymentPhone] PhonePe SDK client not initialized");
+        return res.status(500).json({ 
+          error: "Payment service unavailable",
+          details: "PhonePe SDK client initialization failed"
         });
+      }
+
+      // Build the payment request
+      const paymentRequest = CreateSdkOrderRequest.StandardCheckoutBuilder()
+        .merchantOrderId(merchantOrderId)
+        .amount(amount * 100) // Convert to paise
+        .redirectUrl(redirectUrl)
+        .build();
+
+      console.log("[addPaymentPhone] Sending payment request to PhonePe...");
+
+      try {
+        // Try SDK approach first
+        const response = await client.pay(paymentRequest);
+        console.log("[addPaymentPhone] PhonePe SDK response:", response);
+        
+        const checkoutUrl = response.redirectUrl;
+
+        if (checkoutUrl) {
+          console.log("[addPaymentPhone] Payment URL generated successfully via SDK:", checkoutUrl);
+          return res.status(200).json({
+            orderId: response.orderId,
+            merchantID: merchantOrderId,
+            url: checkoutUrl,
+          });
+        }
+      } catch (sdkError) {
+        console.error("[addPaymentPhone] PhonePe SDK failed, trying direct API approach:", sdkError.message);
+      }
+
+      // Fallback to direct API approach
+      console.log("[addPaymentPhone] Using direct PhonePe API as fallback...");
+      
+      const paymentPayload = {
+        merchantId: MERCHANT_ID,
+        merchantTransactionId: merchantOrderId,
+        merchantUserId: userId,
+        amount: amount * 100, // Convert to paise
+        redirectUrl: redirectUrl,
+        redirectMode: "POST",
+        callbackUrl: `https://nutribowl.org/api/user/checkPayment/${merchantOrderId}/${userId}`,
+        mobileNumber: Mobile,
+        paymentInstrument: {
+          type: "PAY_PAGE",
+        },
+      };
+
+      // Generate signature for direct API
+      const payload = JSON.stringify(paymentPayload);
+      const base64Payload = Buffer.from(payload).toString('base64');
+      const stringToHash = base64Payload + '/pg/v1/pay' + SECRET_KEY;
+      const sha256Hash = crypto.createHash('sha256').update(stringToHash).digest('hex');
+      const signature = sha256Hash + '###' + 1;
+
+      try {
+        const directResponse = await axios.post(
+          PHONEPE_API_URL,
+          { request: base64Payload },
+          {
+            headers: {
+              "X-VERIFY": signature,
+              "Content-Type": "application/json"
+            },
+          }
+        );
+
+        console.log("[addPaymentPhone] PhonePe direct API response:", directResponse.data);
+        
+        const checkoutUrl = directResponse.data?.data?.instrumentResponse?.redirectInfo?.url;
+        
+        if (checkoutUrl) {
+          console.log("[addPaymentPhone] Payment URL generated successfully via direct API:", checkoutUrl);
+          return res.status(200).json({
+            orderId: merchantOrderId,
+            merchantID: merchantOrderId,
+            url: checkoutUrl,
+          });
+        } else {
+          console.error("[addPaymentPhone] Direct API also failed to return URL:", directResponse.data);
+          return res.status(500).json({ 
+            error: "PhonePe payment initialization failed",
+            details: "Both SDK and direct API approaches failed"
+          });
+        }
+      } catch (directApiError) {
+        console.error("[addPaymentPhone] Direct API also failed:", directApiError.message);
+        return res.status(500).json({ 
+          error: "PhonePe payment initialization failed",
+          details: directApiError.message
+        });
+      }
+    } catch (error) {
+      console.error("[addPaymentPhone] Payment Error:", error);
+      console.error("[addPaymentPhone] Error stack:", error.stack);
+      
+      // Return more detailed error information
+      return res.status(500).json({ 
+        error: "Payment processing failed",
+        details: error.message,
+        type: error.constructor.name
+      });
+    }
+  }
+
+  async addPaymentMobile(req, res) {
+    let transaction; // Declare transaction here to fix the ReferenceError
+
+    try {
+      // Validate input
+      const { userId, username, Mobile, orderId, amount } = req.body;
+      if (!userId || !username || !Mobile || !amount) {
+        return res.status(400).json({ error: "Missing required fields" });
       }
 
       // Create transaction record
       transaction = await transactionModel.create({
         userId,
-        username: username || 'User',
-        Mobile: mobile || '',
+        username,
+        Mobile,
         orderId: orderId || `ORD_${Date.now()}`,
         amount,
-        status: 'INITIATED',
-        paymentMethod: 'WEB'
-      });
+        status: 'INITIATED'
+      })
 
-      const transactionId = transaction._id.toString();
-      const merchantTransactionId = `MT_${transactionId}`;
-      const webBaseUrl = process.env.WEB_URL || 'https://madhusewingmachines.com';
-      
-      // PhonePe payment payload
-      const payload = {
-        merchantId: PHONEPE_CONFIG.merchantId,
-        merchantTransactionId: merchantTransactionId,
+      // Prepare payment payload
+      const paymentPayload = {
+        merchantId: "M22IJ7E10A8LQ",
+        merchantTransactionId: transaction._id.toString(),
         merchantUserId: userId,
-        amount: Math.round(amount * 100), // PhonePe expects amount in paise
-        redirectUrl: `${webBaseUrl}/payment?transactionId=${transactionId}&status=redirect`,
-        redirectMode: "REDIRECT",
-        callbackUrl: `${webBaseUrl}/api/phonepe/callback`,
-        mobileNumber: mobile || undefined,
+        amount: amount * 100, // Convert to paise
+        redirectUrl: `https://nutribowl.org/payment-success?transactionId=${transaction._id}&userID=${userId}`,
+
+
+        callbackUrl: "https://nutribowl.org/api/user/checkPayment/" + transaction._id + "/" + userId,
+
+        mobileNumber: Mobile,
         paymentInstrument: {
           type: "PAY_PAGE"
         }
       };
 
-      const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-      const endpoint = "/pg/v1/pay";
-      const checksum = generateChecksum(payload, endpoint);
+      // Generate signature
+      const base64Payload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+      const stringToHash = base64Payload + '/pg/v1/pay' + clientSecret;
+      const sha256Hash = crypto.createHash('sha256').update(stringToHash).digest('hex')+'###' + 1;
+      const signature = sha256Hash + '###' + clientSecret;
 
-      console.log('[PhonePe] Initiating payment:', { merchantTransactionId, amount, userId });
-
-      // Call PhonePe API
-      const apiUrl = getApiUrl();
-      const response = await axios.post(
-        `${apiUrl}${endpoint}`,
-        { request: base64Payload },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-VERIFY": checksum,
-          },
-        }
-      );
-
-      console.log('[PhonePe] API Response:', response.data);
-
-      if (response.data.success && response.data.data?.instrumentResponse?.redirectInfo?.url) {
-        const paymentUrl = response.data.data.instrumentResponse.redirectInfo.url;
-        
-        // Update transaction with PhonePe transaction ID
-        await transactionModel.findByIdAndUpdate(transactionId, {
-          merchantTransactionId: merchantTransactionId,
-          phonepeTransactionId: response.data.data?.transactionId
-        });
-
-        console.log('[PhonePe] Payment URL:', paymentUrl);
-
-        return res.status(200).json({
-          success: true,
-          transactionId,
-          merchantTransactionId,
-          paymentUrl,
-          amount,
-          orderId: orderId || transaction.orderId
-        });
-      } else {
-        throw new Error(response.data.message || "Failed to get payment URL from PhonePe");
-      }
+      res.status(200).json({
+        success: true,
+        data: {
+          transactionBody: base64Payload,
+          checksum: sha256Hash,
+          transactionId: transaction._id,
+        },
+      });
 
     } catch (error) {
-      console.error('[PhonePe] initiate error:', error.response?.data || error.message);
+      console.error("Payment Error:", error.message);
 
+      // Update transaction status if it was created
       if (transaction) {
         await transactionModel.findByIdAndUpdate(transaction._id, {
           status: 'FAILED',
           error: error.response?.data?.message || error.message
-        }).catch(err => console.error('Failed to update transaction:', err));
+        });
       }
 
       return res.status(500).json({
-        success: false,
-        error: "Payment initialization failed",
-        details: error.response?.data?.message || error.message
+        error: "Payment processing error",
+        details: error.response?.data || error.message
       });
     }
   }
 
-  /**
-   * POST /phonepe/callback
-   * PhonePe callback after payment
-   */
-  async callback(req, res) {
+  async updateStatuspayment(req, res) {
     try {
-      console.log('[PhonePe] Callback received:', req.body);
-
-      const { response: encodedResponse } = req.body;
-      
-      if (!encodedResponse) {
-        return res.status(400).json({ success: false, error: "No response data" });
-      }
-
-      // Decode the response
-      const decodedResponse = JSON.parse(Buffer.from(encodedResponse, "base64").toString());
-      console.log('[PhonePe] Decoded callback:', decodedResponse);
-
-      const { merchantTransactionId, transactionId: phonepeTransactionId, code } = decodedResponse;
-
-      // Extract our transaction ID from merchantTransactionId (MT_<transactionId>)
-      const ourTransactionId = merchantTransactionId?.replace('MT_', '');
-
-      if (!ourTransactionId) {
-        return res.status(400).json({ success: false, error: "Invalid transaction ID" });
-      }
-
-      // Update transaction status based on PhonePe response
-      let status = 'PENDING';
-      if (code === 'PAYMENT_SUCCESS') {
-        status = 'COMPLETED';
-      } else if (code === 'PAYMENT_ERROR' || code === 'PAYMENT_DECLINED') {
-        status = 'FAILED';
-      } else if (code === 'PAYMENT_CANCELLED') {
-        status = 'CANCELLED';
-      }
-
-      await transactionModel.findByIdAndUpdate(ourTransactionId, {
-        status,
-        phonepeTransactionId,
-        phonepeResponse: decodedResponse
-      });
-
-      console.log('[PhonePe] Transaction updated:', { ourTransactionId, status });
-
-      return res.status(200).json({ success: true });
-
+      console.log('[updateStatuspayment] id:', req.params.id);
+      let id = req.params.id;
+      let data = await transactionModel.findById(id);
+      if (!data) return res.status(400).json({ error: "Data not found" });
+      data.status = "Completed";
+      data.save();
+      return res.status(200).json({ success: "Successfully Completed" });
     } catch (error) {
-      console.error('[PhonePe] callback error:', error.message);
-      return res.status(500).json({ success: false, error: error.message });
+      console.log('[updateStatuspayment] error:', error);
     }
   }
 
-  /**
-   * GET /phonepe/verify
-   * Verify payment status with PhonePe
-   */
-  async verify(req, res) {
+  async checkPayment(req, res) {
     try {
-      const { transactionId } = req.query;
+      console.log('[checkPayment] params:', req.params);
 
-      if (!transactionId) {
-        return res.status(400).json({
-          success: false,
-          error: "Transaction ID is required"
-        });
-      }
-
-      let transaction = await transactionModel.findById(transactionId);
-      
-      if (!transaction) {
-        return res.status(404).json({
-          success: false,
-          error: "Transaction not found"
-        });
-      }
-
-      // If we have a merchantTransactionId, check status with PhonePe
-      if (transaction.merchantTransactionId && transaction.status === 'INITIATED') {
-        try {
-          const endpoint = `/pg/v1/status/${PHONEPE_CONFIG.merchantId}/${transaction.merchantTransactionId}`;
-          const stringToHash = endpoint + PHONEPE_CONFIG.saltKey;
-          const sha256Hash = crypto.createHash("sha256").update(stringToHash).digest("hex");
-          const checksum = `${sha256Hash}###${PHONEPE_CONFIG.saltIndex}`;
-
-          const apiUrl = getApiUrl();
-          const response = await axios.get(`${apiUrl}${endpoint}`, {
-            headers: {
-              "Content-Type": "application/json",
-              "X-VERIFY": checksum,
-              "X-MERCHANT-ID": PHONEPE_CONFIG.merchantId
+      let id = req.params.id;
+      let userId = req.params.userId
+      let data = await transactionModel.findById(id);
+      if (!data) return res.status(400).json({ error: "Payment Id not found!" })
+      // Helper to persist state and update related order
+      const persistState = async (state) => {
+        if (state === "COMPLETED") {
+          if (data.config) {
+            try {
+              await axios(JSON.parse(data.config))
+              data.config = null
+            } catch (e) {
+              console.error('Config callback failed:', e.message)
             }
-          });
-
-          console.log('[PhonePe] Status check response:', response.data);
-
-          if (response.data.success) {
-            const code = response.data.code;
-            let status = 'PENDING';
-            
-            if (code === 'PAYMENT_SUCCESS') {
-              status = 'COMPLETED';
-            } else if (code === 'PAYMENT_ERROR' || code === 'PAYMENT_DECLINED') {
-              status = 'FAILED';
-            } else if (code === 'PAYMENT_CANCELLED') {
-              status = 'CANCELLED';
-            } else if (code === 'PAYMENT_PENDING') {
-              status = 'PENDING';
-            }
-
-            // Update transaction status
-            transaction = await transactionModel.findByIdAndUpdate(
-              transactionId,
-              { 
-                status,
-                phonepeResponse: response.data
-              },
-              { new: true }
-            );
           }
-        } catch (statusError) {
-          console.error('[PhonePe] Status check error:', statusError.response?.data || statusError.message);
-          // Continue with existing transaction status
+          if (data.orderId && /^[0-9a-fA-F]{24}$/.test(data.orderId)) {
+            try {
+              await Checkout.findByIdAndUpdate(
+                data.orderId,
+                { status: 'Confirmed' },
+                { new: true }
+              );
+            } catch (e) {
+              console.error('Failed to update Checkout status to Confirmed:', e.message);
+            }
+          }
+        }
+        data.status = state;
+        return await data.save();
+      }
+
+      // First try SDK if available
+      if (client && typeof client.getOrderStatus === 'function') {
+        try {
+          const response = await client.getOrderStatus(id);
+          console.log('[checkPayment] SDK getOrderStatus response:', response);
+          const state = response?.state || response?.data?.state || 'PENDING';
+          const saved = await persistState(state);
+          return res.status(200).json({ success: saved })
+        } catch (sdkErr) {
+          console.error('[checkPayment] SDK getOrderStatus failed, falling back to REST:', sdkErr?.message || sdkErr);
         }
       }
 
-      return res.status(200).json({
-        success: true,
-        status: transaction.status || 'PENDING',
-        transactionId: transactionId,
-        amount: transaction.amount,
-        message: transaction.status === 'COMPLETED' ? 'Payment successful' : 
-                 transaction.status === 'PENDING' || transaction.status === 'INITIATED' ? 'Payment is being processed' :
-                 transaction.status === 'FAILED' ? 'Payment failed' :
-                 transaction.status === 'CANCELLED' ? 'Payment cancelled' :
-                 'Payment status unknown'
-      });
+      // Fallback to PhonePe REST status API
+      try {
+        const path = `/pg/v1/status/${MERCHANT_ID}/${id}`;
+        const stringToHash = path + SECRET_KEY;
+        const sha256Hash = crypto.createHash('sha256').update(stringToHash).digest('hex');
+        const xVerify = `${sha256Hash}###1`;
+
+        console.log('[checkPayment] REST status request path:', path);
+        const statusRes = await axios.get(`https://api.phonepe.com/apis/hermes${path}`, {
+          headers: {
+            'X-VERIFY': xVerify,
+            'X-MERCHANT-ID': MERCHANT_ID,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        console.log('[checkPayment] REST status response:', statusRes.data);
+        const state = statusRes?.data?.data?.state || statusRes?.data?.data?.status || 'PENDING';
+        const saved = await persistState(state);
+        return res.status(200).json({ success: saved })
+      } catch (restErr) {
+        console.error('[checkPayment] REST status check failed:', restErr?.response?.data || restErr?.message || restErr);
+        return res.status(400).json({ error: 'Unable to verify payment status at this time.' })
+      }
 
     } catch (error) {
-      console.error('[PhonePe] verify error:', error.message);
-      return res.status(500).json({
-        success: false,
-        error: "Payment verification failed",
-        details: error.message
-      });
+      console.log('[checkPayment] error:', error)
+      return res.status(400).json({ error: error.message })
     }
   }
 
-  /**
-   * POST /phonepe/initiate-sdk
-   * Same as initiate - for backward compatibility
-   */
-  async initiateSDK(req, res) {
-    // Just call the regular initiate method
-    return this.initiate(req, res);
+  async paymentcallback(req, res) {
+    console.log('[paymentcallback] body:', req.body);
+    const { response } = req.body;
+
+    const decodedStr = Buffer.from(response, 'base64').toString('utf-8');
+
+    // Parse JSON
+    const responseJson = JSON.parse(decodedStr);
+    console.log('[paymentcallback] decoded data:', responseJson?.data);
+    const { merchantTransactionId, state } = responseJson?.data;
+
+    // Log the callback data for debugging
+    console.log(`[paymentcallback] Callback received: Transaction ${merchantTransactionId}, Status: ${state}`);
+    let data = await transactionModel.findById(merchantTransactionId);
+    if (data) {
+      data.status = state;
+      if (state === 'COMPLETED') {
+        if (data.config) {
+          try {
+            await axios(JSON.parse(data.config))
+          } catch (e) {
+            console.error('[paymentcallback] config callback failed:', e.message)
+          }
+        }
+        // If an order was created before payment, mark it Confirmed
+        if (data.orderId && /^[0-9a-fA-F]{24}$/.test(data.orderId)) {
+          try {
+            await Checkout.findByIdAndUpdate(
+              data.orderId,
+              { status: 'Confirmed' },
+              { new: true }
+            );
+          } catch (e) {
+            console.error('[paymentcallback] Failed to update Checkout status to Confirmed (callback):', e.message);
+          }
+        }
+      }
+      await data.save()
+    }
+    // Update transaction status in your database
+    if (state === 'COMPLETED') {
+
+
+      // Mark the transaction as successful
+      // Update relevant database records
+      console.log(`Transaction ${merchantTransactionId} was successful.`);
+    } else {
+      // Handle failure or pending status
+      console.log(`Transaction ${merchantTransactionId} failed or is pending.`);
+    }
+
+    // Send a response back to the payment gateway
+    res.status(200).send('Callback processed');
+  }
+
+  async getallpayment(req, res) {
+    try {
+      let data = await transactionModel.find({}).sort({ _id: -1 });
+      return res.status(200).json({ success: data });
+    } catch (error) {
+      console.log(error)
+    }
+  }
+
+  async makepayment(req, res) {
+    let {
+      amount,
+      merchantTransactionId,
+      merchantUserId,
+      redirectUrl,
+      callbackUrl,
+      mobileNumber,
+    } = req.body;
+
+    function generateSignature(payload, saltKey, saltIndex) {
+      const encodedPayload = Buffer.from(payload).toString("base64");
+      const concatenatedString = encodedPayload + "/pg/v1/pay" + saltKey;
+      const hashedValue = crypto
+        .createHash("sha256")
+        .update(concatenatedString)
+        .digest("hex");
+
+      const signature = hashedValue + "###" + saltIndex;
+      return signature;
+    }
+
+    const paymentDetails = {
+      merchantId: MERCHANT_ID,
+      merchantTransactionId: merchantTransactionId,
+      merchantUserId: merchantUserId,
+      amount: amount,
+      redirectUrl: CALLBACK_URL,
+      redirectMode: "POST",
+      callbackUrl: callbackUrl,
+      mobileNumber: mobileNumber,
+      paymentInstrument: {
+        type: "PAY_PAGE",
+      },
+    };
+
+    const payload = JSON.stringify(paymentDetails);
+    let objJsonB64 = Buffer.from(payload).toString("base64");
+    const saltKey = SECRET_KEY; //test key
+    const saltIndex = 1;
+    const signature = generateSignature(payload, saltKey, saltIndex);
+
+    try {
+      const response = await axios.post(
+        "https://api.phonepe.com/apis/hermes/pg/v1/pay",
+
+        // "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay",
+        {
+          request: objJsonB64,
+        },
+        {
+          headers: {
+            "X-VERIFY": signature,
+          },
+        }
+      );
+
+      //   console.log(
+      //     "Payment Response:",
+      //     response.data,
+      //     response.data?.data.instrumentResponse?.redirectInfo?.url
+      //   );
+      return res.status(200).json({
+        url: response.data?.data.instrumentResponse?.redirectInfo,
+      });
+    } catch (error) {
+      console.error("Payment Error:", error);
+    }
   }
 
 }
 
 module.exports = new Transaction();
+
