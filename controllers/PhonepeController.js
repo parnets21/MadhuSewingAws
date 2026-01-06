@@ -1,25 +1,59 @@
 const axios = require("axios");
 const crypto = require('crypto');
 
+// PhonePe Production Credentials
 const MERCHANT_ID = "M23T8T3E76KMB";
-const SECRET_KEY = "f0c866c6-0264-4729-ba6e-deb661a8ea0b";
-const SALT_INDEX = 1;
-// PhonePe Production API - Standard Checkout
-const PHONEPE_STANDARD_CHECKOUT_URL = "https://api.phonepe.com/apis/hermes/pg/v1/pay";
-// Sandbox URL for testing (uncomment to test)
-// const PHONEPE_STANDARD_CHECKOUT_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
-const CALLBACK_URL = "https://madhusewingmachines.com";  
+const CLIENT_ID = "SU2512301550183276999448";
+const CLIENT_SECRET = "f0c866c6-0264-4729-ba6e-deb661a8ea0b";
+const CLIENT_VERSION = 1;
+
+// PhonePe Standard Checkout API URLs
+const PHONEPE_AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
+const PHONEPE_CHECKOUT_URL = "https://api.phonepe.com/apis/pg/checkout/v2/pay";
+const CALLBACK_URL = "https://madhusewingmachines.com";
 
 const transactionModel = require("../models/PhonepeModel");
 const Checkout = require("../models/Order");
 
-// PhonePe credentials
-const clientId = "SU2512301550183276999448";
-const clientSecret = "f0c866c6-0264-4729-ba6e-deb661a8ea0b";
+// Cache for access token
+let accessToken = null;
+let tokenExpiry = null;
 
-// No SDK client - using direct REST API for Node 14 compatibility
-const client = null;
-console.log("PhonePe: Using direct REST API (Node 14 compatible mode)");
+console.log("PhonePe: Using Standard Checkout REST API");
+
+// Function to get OAuth access token
+async function getAccessToken() {
+  // Return cached token if still valid
+  if (accessToken && tokenExpiry && Date.now() < tokenExpiry) {
+    return accessToken;
+  }
+
+  try {
+    console.log("[getAccessToken] Fetching new access token...");
+    const response = await axios.post(
+      PHONEPE_AUTH_URL,
+      new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET
+      }).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    console.log("[getAccessToken] Token response:", response.data);
+    accessToken = response.data.access_token;
+    // Set expiry 5 minutes before actual expiry
+    tokenExpiry = Date.now() + ((response.data.expires_in - 300) * 1000);
+    return accessToken;
+  } catch (error) {
+    console.error("[getAccessToken] Error:", error.response?.data || error.message);
+    throw error;
+  }
+}
 
 class Transaction {
 
@@ -58,86 +92,76 @@ class Transaction {
 
       console.log("[addPaymentPhone] Transaction created with ID:", data._id);
 
-      const merchantOrderId = data._id.toString(); // Use DB _id as unique order ID
-
+      const merchantOrderId = data._id.toString();
       const redirectUrl = `https://madhusewingmachines.com/payment-success?transactionId=${data._id}&userID=${userId}`;
 
-      console.log("[addPaymentPhone] Building payment request for merchantOrderId:", merchantOrderId);
-
-      // Using direct REST API approach (Node 14 compatible)
-      console.log("[addPaymentPhone] Using direct PhonePe REST API...");
-      
-      const paymentPayload = {
-        merchantId: MERCHANT_ID,
-        merchantTransactionId: merchantOrderId,
-        merchantUserId: userId,
-        amount: amount * 100, // Convert to paise
-        redirectUrl: redirectUrl,
-        redirectMode: "POST",
-        callbackUrl: `https://madhusewingmachines.com/api/phonepe/payment-callback`,
-        mobileNumber: Mobile,
-        paymentInstrument: {
-          type: "PAY_PAGE",
-        },
-      };
-
-      // Generate signature for direct API
-      const payload = JSON.stringify(paymentPayload);
-      const base64Payload = Buffer.from(payload).toString('base64');
-      const stringToHash = base64Payload + '/pg/v1/pay' + SECRET_KEY;
-      const sha256Hash = crypto.createHash('sha256').update(stringToHash).digest('hex');
-      const signature = sha256Hash + '###' + SALT_INDEX;
+      console.log("[addPaymentPhone] Building Standard Checkout request for merchantOrderId:", merchantOrderId);
 
       try {
-        console.log("[addPaymentPhone] Calling PhonePe API...");
-        const directResponse = await axios.post(
-          PHONEPE_STANDARD_CHECKOUT_URL,
-          { request: base64Payload },
+        // Get OAuth access token
+        const token = await getAccessToken();
+        console.log("[addPaymentPhone] Got access token, calling Standard Checkout API...");
+
+        // Standard Checkout API payload
+        const checkoutPayload = {
+          merchantOrderId: merchantOrderId,
+          amount: amount * 100, // Convert to paise
+          redirectUrl: redirectUrl,
+          callbackUrl: `https://madhusewingmachines.com/api/phonepe/payment-callback`,
+          paymentFlow: "PG_CHECKOUT",
+          merchantContext: {
+            userId: userId
+          }
+        };
+
+        const response = await axios.post(
+          PHONEPE_CHECKOUT_URL,
+          checkoutPayload,
           {
             headers: {
-              "X-VERIFY": signature,
-              "Content-Type": "application/json"
+              "Authorization": `Bearer ${token}`,
+              "Content-Type": "application/json",
+              "X-Client-Id": CLIENT_ID,
+              "X-Client-Version": CLIENT_VERSION.toString()
             },
           }
         );
 
-        console.log("[addPaymentPhone] PhonePe API response:", directResponse.data);
+        console.log("[addPaymentPhone] PhonePe Standard Checkout response:", response.data);
         
-        const checkoutUrl = directResponse.data?.data?.instrumentResponse?.redirectInfo?.url;
+        const checkoutUrl = response.data?.redirectUrl || response.data?.data?.redirectUrl;
         
         if (checkoutUrl) {
-          console.log("[addPaymentPhone] Payment URL generated successfully via direct API:", checkoutUrl);
+          console.log("[addPaymentPhone] Payment URL generated successfully:", checkoutUrl);
           return res.status(200).json({
             orderId: merchantOrderId,
             merchantID: merchantOrderId,
             url: checkoutUrl,
           });
         } else {
-          console.error("[addPaymentPhone] Direct API also failed to return URL:", directResponse.data);
+          console.error("[addPaymentPhone] No redirect URL in response:", response.data);
           return res.status(500).json({ 
             error: "PhonePe payment initialization failed",
-            details: "Both SDK and direct API approaches failed"
+            details: "No redirect URL received from PhonePe"
           });
         }
-      } catch (directApiError) {
-        // Log detailed error from PhonePe
-        console.error("[addPaymentPhone] PhonePe API error:", directApiError.message);
-        if (directApiError.response) {
-          console.error("[addPaymentPhone] PhonePe error response:", directApiError.response.data);
-          console.error("[addPaymentPhone] PhonePe error status:", directApiError.response.status);
+      } catch (apiError) {
+        console.error("[addPaymentPhone] PhonePe API error:", apiError.message);
+        if (apiError.response) {
+          console.error("[addPaymentPhone] PhonePe error response:", apiError.response.data);
+          console.error("[addPaymentPhone] PhonePe error status:", apiError.response.status);
         }
         
         return res.status(500).json({ 
           error: "PhonePe payment initialization failed",
-          details: directApiError.response?.data?.message || directApiError.message,
-          phonepeError: directApiError.response?.data
+          details: apiError.response?.data?.message || apiError.message,
+          phonepeError: apiError.response?.data
         });
       }
     } catch (error) {
       console.error("[addPaymentPhone] Payment Error:", error);
       console.error("[addPaymentPhone] Error stack:", error.stack);
       
-      // Return more detailed error information
       return res.status(500).json({ 
         error: "Payment processing failed",
         details: error.message,
