@@ -130,9 +130,9 @@ class Transaction {
       log("PAYMENT", "Transaction created in DB", { transactionId: data._id });
 
       const merchantOrderId = data._id.toString();
-      // Use simple redirect URL - PhonePe will append their own params
-      // We'll use merchantOrderId to look up the transaction on success page
-      const redirectUrl = `https://madhusewingmachines.com/PaymentSuccess`;
+      // Include transactionId and userID in redirect URL so PaymentSuccess page can verify
+      // PhonePe will append their own params (orderId, state) to this URL
+      const redirectUrl = `https://madhusewingmachines.com/PaymentSuccess?transactionId=${merchantOrderId}&userID=${userId}&source=app`;
 
       log("PAYMENT", "Preparing PhonePe API call", { merchantOrderId, redirectUrl });
 
