@@ -130,7 +130,9 @@ class Transaction {
       log("PAYMENT", "Transaction created in DB", { transactionId: data._id });
 
       const merchantOrderId = data._id.toString();
-      const redirectUrl = `https://madhusewingmachines.com/PaymentSuccess?transactionId=${data._id}&userID=${userId}&source=app`;
+      // Use simple redirect URL - PhonePe will append their own params
+      // We'll use merchantOrderId to look up the transaction on success page
+      const redirectUrl = `https://madhusewingmachines.com/PaymentSuccess`;
 
       log("PAYMENT", "Preparing PhonePe API call", { merchantOrderId, redirectUrl });
 
@@ -152,10 +154,8 @@ class Transaction {
           },
           paymentFlow: {
             type: "PG_CHECKOUT",
-            message: `Payment for Order ${merchantOrderId}`,
             merchantUrls: {
-              redirectUrl: redirectUrl,
-              callbackUrl: `https://madhusewingmachines.com/api/phonepe/callback`
+              redirectUrl: redirectUrl
             }
           }
         };
