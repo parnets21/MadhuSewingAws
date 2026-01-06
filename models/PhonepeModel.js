@@ -9,8 +9,7 @@ const phonepaytransaction = new mongoose.Schema(
            type:String
        },
        Mobile: {
-        type: Number,
-        // match: /^\+?([0-9]{2})\)?[-. ]?([0-9]{4})[-. ]?([0-9]{4})$/,
+        type: String,
       },
       orderId:{
           type:String
@@ -21,6 +20,16 @@ const phonepaytransaction = new mongoose.Schema(
       },
       transactionid: {
         type: String,
+      },
+      // PhonePe specific fields
+      merchantTransactionId: {
+        type: String,
+      },
+      phonepeTransactionId: {
+        type: String,
+      },
+      phonepeResponse: {
+        type: mongoose.Schema.Types.Mixed,
       },
       transactionStatus:{
         type:String,
@@ -35,9 +44,18 @@ const phonepaytransaction = new mongoose.Schema(
       config:{
         type:String  
       },
-      status: {type: String, 
-        default: "InProgress", 
-      }, 
+      status: {
+        type: String, 
+        default: "INITIATED",
+        enum: ['INITIATED', 'PENDING', 'COMPLETED', 'FAILED', 'CANCELLED']
+      },
+      paymentMethod: {
+        type: String,
+        default: "WEB"
+      },
+      error: {
+        type: String
+      }
     },
     { timestamps: true }
 );
