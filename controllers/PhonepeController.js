@@ -2,18 +2,20 @@ const axios = require("axios");
 const crypto = require('crypto');
 
 const MERCHANT_ID = "M23T8T3E76KMB";
-const SECRET_KEY = "3079f6a3-6f25-4c47-bd4e-c581051ad263";
+const SECRET_KEY = "f0c866c6-0264-4729-ba6e-deb661a8ea0b";
 const SALT_INDEX = 1;
-// Try Standard Checkout API (newer) - fallback to legacy if needed
+// PhonePe Production API - Standard Checkout
 const PHONEPE_STANDARD_CHECKOUT_URL = "https://api.phonepe.com/apis/hermes/pg/v1/pay";
+// Sandbox URL for testing (uncomment to test)
+// const PHONEPE_STANDARD_CHECKOUT_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
 const CALLBACK_URL = "https://madhusewingmachines.com";  
 
 const transactionModel = require("../models/PhonepeModel");
 const Checkout = require("../models/Order");
 
-// PhonePe SDK removed for Node 14 compatibility - using REST API directly
-const clientId = "SU2510151651095669332240";
-const clientSecret = "3079f6a3-6f25-4c47-bd4e-c581051ad263";
+// PhonePe credentials
+const clientId = "SU2512301550183276999448";
+const clientSecret = "f0c866c6-0264-4729-ba6e-deb661a8ea0b";
 
 // No SDK client - using direct REST API for Node 14 compatibility
 const client = null;
