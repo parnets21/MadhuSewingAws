@@ -24,6 +24,17 @@ const phonepaytransaction = new mongoose.Schema(
       transactionid: {
         type: String,
       },
+      // PhonePe specific fields
+      phonepeOrderId: {
+        type: String,  // PhonePe's order ID (e.g., OMO2601061309256346640202W)
+      },
+      paymentFlow: {
+        type: String,
+        enum: ['WEB', 'MOBILE'],
+      },
+      checkoutUrl: {
+        type: String,
+      },
       transactionStatus:{
         type:String,
         default:"CR"
@@ -36,6 +47,9 @@ const phonepaytransaction = new mongoose.Schema(
       },
       config:{
         type:String  
+      },
+      error: {
+        type: String,
       },
       status: {type: String, 
         default: "InProgress", 
