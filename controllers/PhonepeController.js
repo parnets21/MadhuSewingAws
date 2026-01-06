@@ -507,18 +507,19 @@ class Transaction {
         return await data.save();
       };
 
-      // Use phonepeOrderId for status check (CRITICAL FIX)
-      // PhonePe expects their orderId, not our MongoDB _id
-      const orderIdForStatus = data.phonepeOrderId || id;
-      
       // Use Standard Checkout Status API
+      // The correct endpoint is: GET /apis/pg/checkout/v2/order/{merchantOrderId}/status
+      // Note: merchantOrderId is OUR transaction ID, not PhonePe's orderId
       try {
         const token = await getAccessToken();
-        const statusUrl = `${PHONEPE_STATUS_URL}/${orderIdForStatus}/status`;
+        // Use merchantOrderId (our MongoDB _id) for status check, not phonepeOrderId
+        const merchantOrderId = data._id.toString();
+        const statusUrl = `${PHONEPE_STATUS_URL}/${merchantOrderId}/status`;
         
         log("CHECK", "Calling PhonePe Status API", { 
           url: statusUrl,
-          usingPhonepeOrderId: !!data.phonepeOrderId
+          merchantOrderId: merchantOrderId,
+          phonepeOrderId: data.phonepeOrderId
         });
         
         const statusRes = await axios.get(statusUrl, {
