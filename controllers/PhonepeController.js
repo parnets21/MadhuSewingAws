@@ -141,6 +141,7 @@ class Transaction {
 
         // Standard Checkout API payload
         const checkoutPayload = {
+          merchantId: MERCHANT_ID,
           merchantOrderId: merchantOrderId,
           amount: amount * 100, // Convert to paise
           expireAfter: 1200, // 20 minutes
@@ -151,8 +152,10 @@ class Transaction {
           },
           paymentFlow: {
             type: "PG_CHECKOUT",
+            message: `Payment for Order ${merchantOrderId}`,
             merchantUrls: {
-              redirectUrl: redirectUrl
+              redirectUrl: redirectUrl,
+              callbackUrl: `https://madhusewingmachines.com/api/phonepe/callback`
             }
           }
         };
