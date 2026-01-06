@@ -60,45 +60,8 @@ class Transaction {
 
       console.log("[addPaymentPhone] Building payment request for merchantOrderId:", merchantOrderId);
 
-      // Check if PhonePe client is initialized
-      if (!client) {
-        console.error("[addPaymentPhone] PhonePe SDK client not initialized");
-        return res.status(500).json({ 
-          error: "Payment service unavailable",
-          details: "PhonePe SDK client initialization failed"
-        });
-      }
-
-      // Build the payment request
-      const paymentRequest = CreateSdkOrderRequest.StandardCheckoutBuilder()
-        .merchantOrderId(merchantOrderId)
-        .amount(amount * 100) // Convert to paise
-        .redirectUrl(redirectUrl)
-        .build();
-
-      console.log("[addPaymentPhone] Sending payment request to PhonePe...");
-
-      try {
-        // Try SDK approach first
-        const response = await client.pay(paymentRequest);
-        console.log("[addPaymentPhone] PhonePe SDK response:", response);
-        
-        const checkoutUrl = response.redirectUrl;
-
-        if (checkoutUrl) {
-          console.log("[addPaymentPhone] Payment URL generated successfully via SDK:", checkoutUrl);
-          return res.status(200).json({
-            orderId: response.orderId,
-            merchantID: merchantOrderId,
-            url: checkoutUrl,
-          });
-        }
-      } catch (sdkError) {
-        console.error("[addPaymentPhone] PhonePe SDK failed, trying direct API approach:", sdkError.message);
-      }
-
-      // Fallback to direct API approach
-      console.log("[addPaymentPhone] Using direct PhonePe API as fallback...");
+      // Using direct REST API approach (Node 14 compatible)
+      console.log("[addPaymentPhone] Using direct PhonePe REST API...");
       
       const paymentPayload = {
         merchantId: MERCHANT_ID,
