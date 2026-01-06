@@ -72,6 +72,14 @@ class Transaction {
         });
       }
 
+      // Validate minimum amount (PhonePe requires minimum ₹1)
+      if (amount < 1) {
+        return res.status(400).json({ 
+          error: "Invalid amount",
+          details: "Minimum payment amount is ₹1"
+        });
+      }
+
       console.log("[addPaymentPhone] Creating transaction for user:", userId, "amount:", amount, 'orderId:', orderId);
 
       // Save transaction details in DB
@@ -102,13 +110,18 @@ class Transaction {
       try {
         // Get OAuth access token
         const token = await getAccessToken();
-        console.log("[addPaymentPhone] Got access token, calling Standard Checkout API...");
+        console.log("[addPaymentPhone] Got access token:", token ? "Yes (length: " + token.length + ")" : "No");
 
         // Standard Checkout API payload - correct format per PhonePe docs
         const checkoutPayload = {
           merchantOrderId: merchantOrderId,
           amount: amount * 100, // Convert to paise (minimum 100 paise = ₹1)
           expireAfter: 1200, // 20 minutes
+          metaInfo: {
+            udf1: userId,
+            udf2: username,
+            udf3: Mobile
+          },
           paymentFlow: {
             type: "PG_CHECKOUT",
             merchantUrls: {
@@ -118,6 +131,8 @@ class Transaction {
         };
 
         console.log("[addPaymentPhone] Checkout payload:", JSON.stringify(checkoutPayload, null, 2));
+        console.log("[addPaymentPhone] Redirect URL:", redirectUrl);
+        console.log("[addPaymentPhone] Amount in paise:", amount * 100);
 
         const response = await axios.post(
           "https://api.phonepe.com/apis/pg/checkout/v2/pay",
@@ -130,7 +145,7 @@ class Transaction {
           }
         );
 
-        console.log("[addPaymentPhone] PhonePe Standard Checkout response:", response.data);
+        console.log("[addPaymentPhone] PhonePe Standard Checkout response:", JSON.stringify(response.data, null, 2));
         
         const checkoutUrl = response.data?.redirectUrl || response.data?.data?.redirectUrl || response.data?.redirect_url;
         
