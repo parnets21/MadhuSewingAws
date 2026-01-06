@@ -10,6 +10,7 @@ const CLIENT_VERSION = 1;
 // PhonePe Standard Checkout API URLs
 const PHONEPE_AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
 const PHONEPE_CHECKOUT_URL = "https://api.phonepe.com/apis/pg/checkout/v2/pay";
+const PHONEPE_PAY_URL = "https://api.phonepe.com/apis/pg-sandbox/pg/v1/pay"; // Standard Checkout pay endpoint
 const CALLBACK_URL = "https://madhusewingmachines.com";
 
 const transactionModel = require("../models/PhonepeModel");
@@ -107,29 +108,25 @@ class Transaction {
           merchantOrderId: merchantOrderId,
           amount: amount * 100, // Convert to paise
           redirectUrl: redirectUrl,
-          callbackUrl: `https://madhusewingmachines.com/api/phonepe/payment-callback`,
-          paymentFlow: "PG_CHECKOUT",
-          merchantContext: {
-            userId: userId
-          }
+          callbackUrl: `https://madhusewingmachines.com/api/phonepe/payment-callback`
         };
 
+        console.log("[addPaymentPhone] Checkout payload:", checkoutPayload);
+
         const response = await axios.post(
-          PHONEPE_CHECKOUT_URL,
+          "https://api.phonepe.com/apis/pg/checkout/v2/pay",
           checkoutPayload,
           {
             headers: {
-              "Authorization": `Bearer ${token}`,
-              "Content-Type": "application/json",
-              "X-Client-Id": CLIENT_ID,
-              "X-Client-Version": CLIENT_VERSION.toString()
+              "Authorization": `O-Bearer ${token}`,
+              "Content-Type": "application/json"
             },
           }
         );
 
         console.log("[addPaymentPhone] PhonePe Standard Checkout response:", response.data);
         
-        const checkoutUrl = response.data?.redirectUrl || response.data?.data?.redirectUrl;
+        const checkoutUrl = response.data?.redirectUrl || response.data?.data?.redirectUrl || response.data?.redirect_url;
         
         if (checkoutUrl) {
           console.log("[addPaymentPhone] Payment URL generated successfully:", checkoutUrl);
