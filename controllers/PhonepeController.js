@@ -103,15 +103,20 @@ class Transaction {
         const token = await getAccessToken();
         console.log("[addPaymentPhone] Got access token, calling Standard Checkout API...");
 
-        // Standard Checkout API payload
+        // Standard Checkout API payload - correct format per PhonePe docs
         const checkoutPayload = {
           merchantOrderId: merchantOrderId,
-          amount: amount * 100, // Convert to paise
-          redirectUrl: redirectUrl,
-          callbackUrl: `https://madhusewingmachines.com/api/phonepe/payment-callback`
+          amount: amount * 100, // Convert to paise (minimum 100 paise = ₹1)
+          expireAfter: 1200, // 20 minutes
+          paymentFlow: {
+            type: "PG_CHECKOUT",
+            merchantUrls: {
+              redirectUrl: redirectUrl
+            }
+          }
         };
 
-        console.log("[addPaymentPhone] Checkout payload:", checkoutPayload);
+        console.log("[addPaymentPhone] Checkout payload:", JSON.stringify(checkoutPayload, null, 2));
 
         const response = await axios.post(
           "https://api.phonepe.com/apis/pg/checkout/v2/pay",
