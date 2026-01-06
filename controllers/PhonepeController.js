@@ -94,7 +94,8 @@ class Transaction {
       console.log("[addPaymentPhone] Transaction created with ID:", data._id);
 
       const merchantOrderId = data._id.toString();
-      const redirectUrl = `https://madhusewingmachines.com/payment-success?transactionId=${data._id}&userID=${userId}`;
+      // Use correct path /PaymentSuccess (capital P and S) and add source=app for mobile app redirect
+      const redirectUrl = `https://madhusewingmachines.com/PaymentSuccess?transactionId=${data._id}&userID=${userId}&source=app`;
 
       console.log("[addPaymentPhone] Building Standard Checkout request for merchantOrderId:", merchantOrderId);
 
