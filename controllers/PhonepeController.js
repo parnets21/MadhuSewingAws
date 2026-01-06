@@ -1,4 +1,4 @@
-const { StandardCheckoutClient, Env, CreateSdkOrderRequest, StandardCheckoutPayRequest } = require('pg-sdk-node');
+const { StandardCheckoutClient, Env, StandardCheckoutPayRequest } = require('pg-sdk-node');
 
 const transactionModel = require("../models/PhonepeModel");
 
@@ -88,6 +88,7 @@ class Transaction {
     });
   }
 
+
   /**
    * POST /phonepe/initiate
    * Creates payment for web-based flow using PhonePe SDK
@@ -106,7 +107,7 @@ class Transaction {
           error: "Missing required fields: userId and amount are required" 
         });
       }
-      // Validate amount is positive
+      
       if (amount <= 0) {
         return res.status(400).json({ 
           success: false,
@@ -135,7 +136,7 @@ class Transaction {
       const transactionId = transaction._id.toString();
       const amountInPaise = Math.round(amount * 100);
       const webBaseUrl = process.env.WEB_URL || 'https://madhusewingmachines.com';
-      const redirectUrl = `${webBaseUrl}/payment-status?transactionId=${transactionId}`;
+      const redirectUrl = `${webBaseUrl}/payment?transactionId=${transactionId}`;
 
       this.logPaymentRequest('initiate', { transactionId, amount: amountInPaise });
 
@@ -153,14 +154,13 @@ class Transaction {
           this.logPaymentResponse('initiate', response);
 
           if (response && response.redirectUrl) {
-            // Update transaction with PhonePe order ID
             transaction.phonepeOrderId = response.orderId;
             await transaction.save();
 
             return res.status(200).json({
               success: true,
               transactionId,
-              redirectUrl: response.redirectUrl,
+              paymentUrl: response.redirectUrl,
               phonepeOrderId: response.orderId,
               amount,
               orderId: orderId || transaction.orderId
@@ -168,7 +168,6 @@ class Transaction {
           }
         } catch (sdkError) {
           console.error('PhonePe SDK error:', sdkError.message);
-          // Fall through to fallback
         }
       }
 
@@ -218,7 +217,6 @@ class Transaction {
         });
       }
 
-      // Find transaction in database
       let transaction = await transactionModel.findById(transactionId);
       
       if (!transaction) {
@@ -239,7 +237,6 @@ class Transaction {
 
           const state = response?.state || 'UNKNOWN';
 
-          // Update transaction status
           transaction.status = state;
           await transaction.save();
 
@@ -259,7 +256,6 @@ class Transaction {
         }
       }
 
-      // Return cached status if SDK fails
       return res.status(200).json({
         success: true,
         status: transaction.status || 'PENDING',
@@ -278,10 +274,11 @@ class Transaction {
     }
   }
 
+
   /**
    * POST /phonepe/initiate-sdk
-   * Creates payment for native SDK flow using PhonePe SDK
-   * Returns token for react-native-phonepe-pg SDK
+   * Creates payment for mobile SDK flow using PhonePe SDK
+   * Returns payment URL (same as web) - mobile app opens it in browser
    */
   async initiateSDK(req, res) {
     let transaction;
@@ -297,7 +294,6 @@ class Transaction {
         });
       }
 
-      // Validate amount is positive
       if (amount <= 0) {
         return res.status(400).json({ 
           success: false,
@@ -327,27 +323,30 @@ class Transaction {
       const transactionId = transaction._id.toString();
       const amountInPaise = Math.round(amount * 100);
       const webBaseUrl = process.env.WEB_URL || 'https://madhusewingmachines.com';
-      const redirectUrl = `${webBaseUrl}/payment-status?transactionId=${transactionId}`;
+      
+      // Redirect URL - where user goes after payment
+      const redirectUrl = `${webBaseUrl}/payment?transactionId=${transactionId}`;
 
       this.logPaymentRequest('initiateSDK', { transactionId, amount: amountInPaise, userId });
 
-      // Try using PhonePe SDK to create SDK order
+      // Try using PhonePe SDK to get payment URL
       if (phonepeClient) {
         try {
-          const request = CreateSdkOrderRequest.StandardCheckoutBuilder()
+          // Use StandardCheckoutPayRequest to get redirect URL (same as web)
+          const request = StandardCheckoutPayRequest.builder()
             .merchantOrderId(transactionId)
             .amount(amountInPaise)
             .redirectUrl(redirectUrl)
             .build();
 
-          console.log('DEBUG - Creating SDK Order with:', { transactionId, amountInPaise, redirectUrl });
+          console.log('DEBUG - Creating payment with SDK:', { transactionId, amountInPaise, redirectUrl });
 
-          const response = await phonepeClient.createSdkOrder(request);
+          const response = await phonepeClient.pay(request);
           
-          console.log('DEBUG - SDK Order Response:', JSON.stringify(response, null, 2));
+          console.log('DEBUG - SDK Pay Response:', JSON.stringify(response, null, 2));
           this.logPaymentResponse('initiateSDK', response);
 
-          if (response && response.token) {
+          if (response && response.redirectUrl) {
             // Update transaction with PhonePe order ID
             transaction.phonepeOrderId = response.orderId;
             await transaction.save();
@@ -357,7 +356,9 @@ class Transaction {
 
             return res.status(200).json({
               success: true,
-              token: response.token,
+              // Return the PhonePe payment URL - mobile app will open this in browser
+              mercuryLink: response.redirectUrl,
+              paymentUrl: response.redirectUrl,
               orderId: response.orderId,
               transactionId: transactionId,
               callbackUrl: callbackUrl,
@@ -366,15 +367,14 @@ class Transaction {
             });
           }
         } catch (sdkError) {
-          console.error('PhonePe SDK createSdkOrder error:', sdkError.message);
+          console.error('PhonePe SDK pay error:', sdkError.message);
           if (sdkError.response) {
             console.error('SDK Error Response:', JSON.stringify(sdkError.response, null, 2));
           }
-          // Fall through to fallback
         }
       }
 
-      // API failed - return fallback web URL
+      // SDK failed - return fallback web URL
       console.warn('PhonePe SDK failed, returning fallback web payment URL');
       
       const paymentUrl = `${webBaseUrl}/payment?transactionId=${transactionId}&amount=${amount}&orderId=${orderId || transaction.orderId}&userId=${userId}&username=${encodeURIComponent(username || 'User')}&mobile=${Mobile || ''}`;
