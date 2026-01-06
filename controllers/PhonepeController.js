@@ -311,7 +311,7 @@ class Transaction {
       const transactionId = transaction._id.toString();
       const amountInPaise = Math.round(amount * 100);
 
-      // Prepare request payload for PhonePe /v1/pay endpoint
+     
       // Using the correct format for PhonePe API
       const paymentPayload = {
         merchantId: MERCHANT_CONFIG.clientId,
@@ -330,12 +330,12 @@ class Transaction {
       // Encode payload to base64
       const base64Payload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
-      // Generate signature (use /pg/v1/orders endpoint path)
-      // Signature format: SHA256(base64Payload + "/pg/v1/orders" + clientSecret) + "###1"
-      const signature = this.generateSignature(base64Payload, '/pg/v1/orders');
+      // Generate signature (use /pg/v1/pay endpoint path)
+      // Signature format: SHA256(base64Payload + "/pg/v1/pay" + clientSecret) + "###1"
+      const signature = this.generateSignature(base64Payload, '/pg/v1/pay');
 
       // Log request (sanitized)
-      this.logPaymentRequest('/pg/v1/orders', base64Payload, signature);
+      this.logPaymentRequest('/pg/v1/pay', base64Payload, signature);
 
       console.log('DEBUG - Payment Payload:', JSON.stringify(paymentPayload, null, 2));
       console.log('DEBUG - Base64 Payload:', base64Payload);
@@ -347,7 +347,7 @@ class Transaction {
 
       try {
         phonepeResponse = await axios.post(
-          `${MERCHANT_CONFIG.apiUrl}/pg/v1/orders`,
+          `${MERCHANT_CONFIG.apiUrl}/pg/v1/pay`,
           {
             request: base64Payload
           },
@@ -367,9 +367,9 @@ class Transaction {
         console.log('DEBUG - PhonePe Response Data:', JSON.stringify(phonepeResponse.data, null, 2));
 
         // Check if response status indicates success
-        if (phonepeResponse.status === 200 && phonepeResponse.data?.orderId && phonepeResponse.data?.token) {
+        if (phonepeResponse.status === 200 && phonepeResponse.data?.data?.instrumentResponse?.redirectUrl) {
           apiSuccess = true;
-          this.logPaymentResponse('/pg/v1/orders', phonepeResponse.data);
+          this.logPaymentResponse('/pg/v1/pay', phonepeResponse.data);
         } else {
           console.warn(`PhonePe API returned status ${phonepeResponse.status}:`, phonepeResponse.data);
         }
@@ -379,25 +379,26 @@ class Transaction {
       }
 
       // If API succeeded, return token
-      if (apiSuccess && phonepeResponse.data?.token) {
+      if (apiSuccess && phonepeResponse.data?.data?.instrumentResponse?.redirectUrl) {
         const responseData = phonepeResponse.data;
+        const redirectUrl = responseData.data.instrumentResponse.redirectUrl;
 
-        // Update transaction with PhonePe order ID
-        transaction.phonepeOrderId = responseData.orderId;
-        await transaction.save();
+        // Update transaction with PhonePe order ID if available
+        if (responseData.data?.merchantOrderId) {
+          transaction.phonepeOrderId = responseData.data.merchantOrderId;
+          await transaction.save();
+        }
 
         // Deep link callback URL for returning to app after payment
         const callbackUrl = `madhusewing://paymentstatus?transactionId=${transactionId}&status=PENDING&userId=${userId}`;
 
         // Return Mercury link directly
-        const mercuryLink = `https://mercury-t2.phonepe.com/transact/pgv3?token=${responseData.token}&routingKey=W`;
+        const mercuryLink = redirectUrl;
 
         return res.status(200).json({
           success: true,
-          token: responseData.token,
-          orderId: responseData.orderId,
+          redirectUrl: mercuryLink,
           transactionId: transactionId,
-          mercuryLink: mercuryLink,
           callbackUrl: callbackUrl,
           merchantId: MERCHANT_CONFIG.clientId,
           amount: amount
