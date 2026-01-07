@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/authMiddleware");
 const Order = require("../models/Order");
+const Counter = require("../models/Counter");
 
 // Input validation middleware
 const validateOrderInput = (req, res, next) => {
@@ -58,16 +59,31 @@ const validateOrderInput = (req, res, next) => {
 // Create a New Order (Protected route)
 router.post("/", protect, validateOrderInput, async (req, res) => {
   try {
+    // Get next order number
+    const counter = await Counter.findOneAndUpdate(
+      { name: 'orderNumber' },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true }
+    );
+
     const orderData = {
       ...req.body,
+      orderNumber: counter.seq || 1,
       userId: req.user._id,
-      status: "Pending",
-      paymentStatus: "Pending",
+      status: req.body.status || "Pending",
+      paymentStatus: req.body.paymentStatus || "Pending",
       createdAt: new Date()
     };
 
     const newOrder = new Order(orderData);
     const savedOrder = await newOrder.save();
+
+    console.log('Order created successfully:', {
+      orderId: savedOrder._id,
+      orderNumber: savedOrder.orderNumber,
+      transactionId: req.body.transactionId,
+      userId: req.user._id
+    });
 
     res.status(201).json({
       success: true,
@@ -75,11 +91,12 @@ router.post("/", protect, validateOrderInput, async (req, res) => {
       data: savedOrder.toObject(),
     });
   } catch (error) {
-    console.error("Order creation error:", error);
-    return res.status(400).json({
-      success: false,
-      error:error.message
-    })
+    console.error("Order creation error:", {
+      error: error.message,
+      stack: error.stack,
+      requestBody: req.body,
+      userId: req.user?._id
+    });
     
     if (error.name === 'ValidationError') {
       return res.status(400).json({
@@ -92,7 +109,7 @@ router.post("/", protect, validateOrderInput, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error while creating order",
-      
+      error: error.message
     });
   }
 });
