@@ -1,23 +1,28 @@
-const transactionController = require("../controllers/PhonepeController");
 const express = require('express');
+const transactionController = require("../controllers/PhonepeController");
 const router = express.Router();
 
-// Test route to verify PhonePe routes are working
+// Test route
 router.get("/test", (req, res) => {
-  res.json({ message: "PhonePe routes are working correctly!", timestamp: new Date().toISOString() });
+  res.json({ message: "PhonePe routes are working!", timestamp: new Date().toISOString() });
 });
 
-// Web Payment - Uses Mercury API (checkout/v2/pay) - for browser only
-router.post("/addpaymentphonepay", (req, res) => transactionController.addPaymentPhone(req, res));
+// Main payment route for mobile app checkout
+router.post("/addpayment", transactionController.addPaymentMobile);
 
-// Mobile Payment - Uses Hermes API (hermes/pg/v1/pay) - for mobile app
-router.post("/addpaymentmobile", (req, res) => transactionController.addPaymentMobile(req, res));
+// Mobile app redirect after payment (handles deep link redirect)
+router.get("/mobile-redirect", transactionController.mobileRedirect);
 
-router.post("/makepayment", (req, res) => transactionController.makepayment(req, res));
-router.put("/updateStatuspayment/:id", (req, res) => transactionController.updateStatuspayment(req, res));
-router.get("/getallpayment", (req, res) => transactionController.getallpayment(req, res));
-router.post("/payment-callback", (req, res) => transactionController.paymentcallback(req, res));
-router.post("/callback", (req, res) => transactionController.paymentcallback(req, res));
-router.get("/checkPayment/:id/:userId", (req, res) => transactionController.checkPayment(req, res));
+// Web payment routes
+router.post("/addpaymentphonepay", transactionController.addPaymentPhone);
+router.post("/makepayment", transactionController.makepayment);
 
-module.exports = router; 
+// Payment status routes
+router.put("/updateStatuspayment/:id", transactionController.updateStatuspayment);
+router.get("/checkPayment/:id/:userId", transactionController.checkPayment);
+router.post("/payment-callback", transactionController.paymentcallback);
+
+// Get all payments
+router.get("/getallpayment", transactionController.getallpayment);
+
+module.exports = router;

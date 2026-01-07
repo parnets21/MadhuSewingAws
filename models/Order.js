@@ -19,6 +19,8 @@ const orderSchema = mongoose.Schema({
   subtotal: { type: Number, required: true },
   total: { type: Number, required: true },
   paymentMethod: { type: String, required: true },
+  paymentStatus: { type: String, default: 'Pending' },
+  transactionId: { type: String },
   status: { type: String, default: 'Pending' },
   createdAt: { type: Date, default: Date.now }
 });   

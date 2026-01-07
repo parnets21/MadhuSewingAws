@@ -241,6 +241,59 @@ router.put("/:orderId/status", protect, async (req, res) => {
   }
 });
 
+// Update Order Payment Status (Protected)
+router.put("/:orderId/payment-status", protect, async (req, res) => {
+  try {
+    const { paymentStatus, transactionId } = req.body;
+    const validPaymentStatuses = ["Pending", "Paid", "Failed", "Refunded"];
+
+    if (!paymentStatus || !validPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid payment status. Must be one of: ${validPaymentStatuses.join(", ")}`,
+      });
+    }
+
+    const updateData = { paymentStatus };
+    if (transactionId) {
+      updateData.transactionId = transactionId;
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(
+      req.params.orderId,
+      updateData,
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Order payment status updated successfully",
+      data: updatedOrder,
+    });
+  } catch (error) {
+    console.error("Error updating order payment status:", error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID format",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while updating order payment status",
+    });
+  }
+});
+
 // Delete an Order (Protected - Admin only)
 router.delete("/:orderId", protect, async (req, res) => {
   try {

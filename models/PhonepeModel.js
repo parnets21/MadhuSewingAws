@@ -24,17 +24,6 @@ const phonepaytransaction = new mongoose.Schema(
       transactionid: {
         type: String,
       },
-      // PhonePe specific fields
-      phonepeOrderId: {
-        type: String,  // PhonePe's order ID (e.g., OMO2601061309256346640202W)
-      },
-      paymentFlow: {
-        type: String,
-        enum: ['WEB', 'MOBILE'],
-      },
-      checkoutUrl: {
-        type: String,
-      },
       transactionStatus:{
         type:String,
         default:"CR"
@@ -46,10 +35,7 @@ const phonepaytransaction = new mongoose.Schema(
         type:String
       },
       config:{
-        type:String  
-      },
-      error: {
-        type: String,
+        type: mongoose.Schema.Types.Mixed
       },
       status: {type: String, 
         default: "InProgress", 
@@ -58,5 +44,5 @@ const phonepaytransaction = new mongoose.Schema(
     { timestamps: true }
 );
 
-const otpModel = mongoose.model("teachertransaction", phonepaytransaction);
-module.exports = otpModel;
+const PhonepeModel = mongoose.model("teachertransaction", phonepaytransaction);
+module.exports = PhonepeModel;
