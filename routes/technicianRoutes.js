@@ -9,7 +9,10 @@ const {
   getTechnicianById,
   getCurrentTechnician,
   updateTechnician,
-  assignTechnician
+  assignTechnician,
+  updateTechnicianLocation,
+  getTechnicianLocation,
+  getTechnicianLocationHistory
 } = require('../controllers/technicianController');
 
 // Public routes
@@ -22,5 +25,10 @@ router.put('/service-requests/:id/assign', assignTechnician);
 // Protected routes
 router.get('/profile/me',  getCurrentTechnician);
 router.put('/profile/update', updateTechnician);
+
+// Location tracking routes
+router.post('/location/update', updateTechnicianLocation);
+router.get('/:id/location', getTechnicianLocation);
+router.get('/:id/location/history', getTechnicianLocationHistory);
 
 module.exports = router;

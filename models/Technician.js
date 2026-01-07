@@ -54,6 +54,48 @@ const technicianSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  currentLocation: {
+    latitude: {
+      type: Number,
+      min: [-90, 'Invalid latitude'],
+      max: [90, 'Invalid latitude'],
+    },
+    longitude: {
+      type: Number,
+      min: [-180, 'Invalid longitude'],
+      max: [180, 'Invalid longitude'],
+    },
+    address: {
+      type: String,
+      trim: true,
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now,
+    }
+  },
+  locationHistory: [{
+    latitude: {
+      type: Number,
+      required: true,
+    },
+    longitude: {
+      type: Number,
+      required: true,
+    },
+    address: {
+      type: String,
+      trim: true,
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+    jobId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Job',
+    }
+  }],
 }, { timestamps: true });
 
 // Hash password before saving

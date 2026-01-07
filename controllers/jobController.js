@@ -1,5 +1,6 @@
 const Job = require('../models/Job');
 const ServiceRequest = require('../models/ServiceRequest');
+const Technician = require('../models/Technician');
 const asyncHandler = require('express-async-handler');
 
 // @desc    Get jobs for a technician
@@ -9,14 +10,14 @@ const getTechnicianJobs = asyncHandler(async (req, res) => {
   const { status } = req.query;
   const { technicianId } = req.params;
 
- let query = { technician: technicianId };
+ let query = { technicianId: technicianId };
   if (status) {
     query.status = status;
   }
 
   const jobs = await Job.find(query)
     .populate('serviceRequest')
-    .populate('technician', 'name phone')
+    .populate('technicianId', 'name phone')
     .sort('-createdAt');
 
   res.json({
@@ -62,7 +63,7 @@ const getTechnicianJobs = asyncHandler(async (req, res) => {
 // @route   PATCH /api/jobs/:jobId/status
 // @access  Private
 const updateJobStatus = asyncHandler(async (req, res) => {
-  const { status } = req.body;
+  const { status, latitude, longitude } = req.body;
   
   const job = await Job.findById(req.params.jobId);
   if (!job) {
@@ -72,6 +73,57 @@ const updateJobStatus = asyncHandler(async (req, res) => {
 
   job.status = status;
   const updatedJob = await job.save();
+
+  // If job is accepted, update technician location
+  if (status === 'accepted' && latitude && longitude) {
+    try {
+      const technician = await Technician.findById(job.technicianId);
+      if (technician) {
+        // Update location using the existing location update logic
+        const axios = require('axios');
+        let address = '';
+        
+        try {
+          const response = await axios.get(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.GOOGLE_MAPS_API_KEY}`
+          );
+          
+          if (response.data.results && response.data.results.length > 0) {
+            address = response.data.results[0].formatted_address;
+          }
+        } catch (geocodeError) {
+          console.error('Geocoding error:', geocodeError);
+        }
+
+        // Update current location
+        technician.currentLocation = {
+          latitude,
+          longitude,
+          address,
+          lastUpdated: new Date()
+        };
+
+        // Add to location history with job reference
+        technician.locationHistory.push({
+          latitude,
+          longitude,
+          address,
+          timestamp: new Date(),
+          jobId: job._id
+        });
+
+        // Keep only last 100 location history entries
+        if (technician.locationHistory.length > 100) {
+          technician.locationHistory = technician.locationHistory.slice(-100);
+        }
+
+        await technician.save();
+      }
+    } catch (locationError) {
+      console.error('Error updating technician location:', locationError);
+      // Don't fail the job status update if location update fails
+    }
+  }
 
   if (status === 'completed') {
     await ServiceRequest.findByIdAndUpdate(

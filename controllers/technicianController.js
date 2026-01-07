@@ -4,6 +4,7 @@ const Job = require('../models/Job');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
 const { sendJobAssignedNotification } = require('../utils/firebaseNotification');
+const axios = require('axios');
 
 // @desc    Register a new technician
 // @route   POST /api/technicians
@@ -155,13 +156,27 @@ const assignTechnician = asyncHandler(async (req, res) => {
 // @route   GET /api/technicians/:id
 // @access  Public
 const getTechnicianById = asyncHandler(async (req, res) => {
-  const technician = await Technician.findById(req.params.id).select('-password');
+  try {
+    const technician = await Technician.findById(req.params.id).select('-password');
 
-  if (technician) {
-    res.json(technician);
-  } else {
-    res.status(404);
-    throw new Error('Technician not found');
+    if (!technician) {
+      res.status(404);
+      throw new Error('Technician not found');
+    }
+
+    res.json({
+      success: true,
+      data: technician
+    });
+  } catch (error) {
+    // Handle invalid ObjectId format
+    if (error.name === 'CastError') {
+      res.status(400);
+      throw new Error('Invalid technician ID format');
+    }
+    
+    // Re-throw other errors
+    throw error;
   }
 });
 
@@ -237,6 +252,135 @@ const generateToken = (id) => {
   });
 };
 
+// @desc    Update technician location
+// @route   POST /api/technicians/location/update
+// @access  Private
+const updateTechnicianLocation = asyncHandler(async (req, res) => {
+  const { technicianId, latitude, longitude, jobId } = req.body;
+
+  if (!technicianId || !latitude || !longitude) {
+    res.status(400);
+    throw new Error('Technician ID, latitude, and longitude are required');
+  }
+
+  try {
+    // Get address from coordinates using Google Geocoding API
+    let address = '';
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.GOOGLE_MAPS_API_KEY}`
+      );
+      
+      if (response.data.results && response.data.results.length > 0) {
+        address = response.data.results[0].formatted_address;
+      }
+    } catch (geocodeError) {
+      console.error('Geocoding error:', geocodeError);
+      // Continue without address if geocoding fails
+    }
+
+    const technician = await Technician.findById(technicianId);
+    if (!technician) {
+      res.status(404);
+      throw new Error('Technician not found');
+    }
+
+    // Update current location
+    technician.currentLocation = {
+      latitude,
+      longitude,
+      address,
+      lastUpdated: new Date()
+    };
+
+    // Add to location history
+    technician.locationHistory.push({
+      latitude,
+      longitude,
+      address,
+      timestamp: new Date(),
+      jobId: jobId || null
+    });
+
+    // Keep only last 100 location history entries
+    if (technician.locationHistory.length > 100) {
+      technician.locationHistory = technician.locationHistory.slice(-100);
+    }
+
+    await technician.save();
+
+    res.json({
+      success: true,
+      message: 'Location updated successfully',
+      data: {
+        currentLocation: technician.currentLocation
+      }
+    });
+  } catch (error) {
+    console.error('Location update error:', error);
+    res.status(500);
+    throw new Error('Failed to update location');
+  }
+});
+
+// @desc    Get technician current location
+// @route   GET /api/technicians/:id/location
+// @access  Public
+const getTechnicianLocation = asyncHandler(async (req, res) => {
+  const technician = await Technician.findById(req.params.id).select('name currentLocation');
+
+  if (!technician) {
+    res.status(404);
+    throw new Error('Technician not found');
+  }
+
+  res.json({
+    success: true,
+    data: {
+      technicianId: technician._id,
+      name: technician.name,
+      currentLocation: technician.currentLocation
+    }
+  });
+});
+
+// @desc    Get technician location history
+// @route   GET /api/technicians/:id/location/history
+// @access  Private
+const getTechnicianLocationHistory = asyncHandler(async (req, res) => {
+  const { limit = 50, jobId } = req.query;
+  
+  const technician = await Technician.findById(req.params.id).select('name locationHistory');
+
+  if (!technician) {
+    res.status(404);
+    throw new Error('Technician not found');
+  }
+
+  let locationHistory = technician.locationHistory;
+
+  // Filter by jobId if provided
+  if (jobId) {
+    locationHistory = locationHistory.filter(location => 
+      location.jobId && location.jobId.toString() === jobId
+    );
+  }
+
+  // Sort by timestamp (newest first) and limit results
+  locationHistory = locationHistory
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, parseInt(limit));
+
+  res.json({
+    success: true,
+    data: {
+      technicianId: technician._id,
+      name: technician.name,
+      locationHistory
+    }
+  });
+});
+
 module.exports = {
   registerTechnician,
   loginTechnician,
@@ -244,5 +388,8 @@ module.exports = {
   getTechnicianById,
   getCurrentTechnician,
   updateTechnician,
-  assignTechnician
+  assignTechnician,
+  updateTechnicianLocation,
+  getTechnicianLocation,
+  getTechnicianLocationHistory
 };
